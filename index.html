@@ -32,8 +32,8 @@
 <input id="fileInput" type="file" accept="audio/*">
 <canvas id="cv"></canvas>
 
-<!-- Socket.IO CDN -->
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<!-- ⭐ Socket.IO 안정 버전 CDN (websocket handshake 성공) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 
 <script>
 /* =======================================================
@@ -43,7 +43,7 @@ let twX = 0.5;      // normalized 0~1
 let twY = 0.5;
 let twTime = -9999;
 
-// ⭐ 수정 완료된 부분: transports 옵션 제거
+// ⭐ 최종 정상 버전: transports 옵션 제거
 const socket = io("https://touchwave-server.vercel.app");
 
 socket.on("connect", () => console.log("🔵 TouchWave Connected OK"));
@@ -123,7 +123,8 @@ function drawHeart(scale, color) {
     ctx.beginPath();
     for (let a = 0; a < Math.PI * 2; a += 0.03) {
         let x = 16 * Math.pow(Math.sin(a), 3);
-        let y = -(13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a));
+        let y = -(13 * Math.cos(a) - 5 * Math.cos(2 * a)
+               - 2 * Math.cos(3 * a) - Math.cos(4 * a));
         ctx.lineTo(x, y);
     }
     ctx.closePath();
