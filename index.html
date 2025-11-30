@@ -32,27 +32,26 @@
 <input id="fileInput" type="file" accept="audio/*">
 <canvas id="cv"></canvas>
 
-<!-- TouchWave socket.io -->
+<!-- Socket.IO CDN -->
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
 <script>
-// =======================================================
-// 0) TouchWave Variables
-// =======================================================
+/* =======================================================
+   0) TouchWave Variables
+   ======================================================= */
 let twX = 0.5;      // normalized 0~1
 let twY = 0.5;
 let twTime = -9999;
 
-// Connect to TouchWave Server
-const socket = io("https://touchwave-server.vercel.app", {
-    transports: ["websocket", "polling"]
-});
+// ⭐ 수정 완료된 부분: transports 옵션 제거
+const socket = io("https://touchwave-server.vercel.app");
 
-socket.on("connect", () => console.log("🔵 TouchWave Connected"));
+socket.on("connect", () => console.log("🔵 TouchWave Connected OK"));
 
 socket.on("touchwave", ({ x, y }) => {
     console.log("TouchWave Signal:", x, y);
 
-    // 3초 딜레이(유튜브 방송 지연 보정)
+    // 유튜브 방송 딜레이 3초 보정
     setTimeout(() => {
         twX = x;
         twY = y;
@@ -60,9 +59,9 @@ socket.on("touchwave", ({ x, y }) => {
     }, 3000);
 });
 
-// =======================================================
-// 1) Canvas + Audio Engine
-// =======================================================
+/* =======================================================
+   1) Canvas + Audio Engine
+   ======================================================= */
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
 
@@ -113,9 +112,9 @@ function getAudioLevel() {
     return (sum / dataArray.length) / 255;
 }
 
-// =======================================================
-// 2) Heart Drawing
-// =======================================================
+/* =======================================================
+   2) Heart Drawing
+   ======================================================= */
 function drawHeart(scale, color) {
     ctx.save();
     ctx.translate(cv.width / 2, cv.height / 2);
@@ -134,9 +133,9 @@ function drawHeart(scale, color) {
     ctx.restore();
 }
 
-// =======================================================
-// 3) Render Loop
-// =======================================================
+/* =======================================================
+   3) Render Loop
+   ======================================================= */
 function loop(t) {
     ctx.clearRect(0, 0, cv.width, cv.height);
     ctx.fillStyle = "black";
@@ -144,11 +143,11 @@ function loop(t) {
 
     const audioLevel = getAudioLevel();
 
-    // 안정적 Pulse + 오디오 반응
+    // 기본 Pulse + 오디오 반응
     const fakePulse = (Math.sin(t * 0.002 * 2) + 1) * 0.3;
     const pulse = 0.4 + audioLevel * 0.9 + fakePulse;
 
-    // TouchWave Shockwave 영향
+    // TouchWave Shock 영향
     let twInfluence = 0;
     const elapsed = t * 0.001 - twTime;
     if (elapsed > 0 && elapsed < 3) {
@@ -166,5 +165,6 @@ function loop(t) {
 }
 requestAnimationFrame(loop);
 </script>
+
 </body>
 </html>
