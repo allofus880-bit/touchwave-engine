@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>EPx TouchWave Interactive Engine</title>
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: black;
+        width: 100%;
+        height: 100%;
+    }
+    canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+    }
+    #uploadBox {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        z-index: 10;
+        padding: 6px 12px;
+        background: #fff;
+        font-size: 16px;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+</style>
+</head>
+
+<body>
+
+<!-- WebGL Canvas -->
+<canvas id="glslCanvas"></canvas>
+<input id="uploadBox" type="file" accept="audio/*" />
+
+<!-- socket.io CDN -->
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+<script>
+/* ==========================================================
+   0. TouchWave Global Variables
+========================================================== */
+let touchX = 0.0;
+let touchY = 0.0;
+let touchTime = -9999.0;
+
+/* ==========================================================
+   1. TouchWave Server Connection (CDN 방식)
+========================================================== */
+const socket = io("https://touchwave-server.vercel.app", {
+    transports: ["websocket"]
+});
+
+socket.on("connect", () => console.log("🔵 Connected:", socket.id));
+
+socket.on("touchwave", ({ x, y }) => {
+    console.log("🔵 TouchWave Signal:", x, y);
+
+    setTimeout(() => {
+        touchX = x;
+        touchY = y;
+        touchTime = performance.now() * 0.001;
+        console.log("💥 Shockwave Triggered:", x, y);
+    }, 3000); // 3초 딜레이 (유튜브 지연 보정)
+});
+
+/* ==========================================================
+   2. WebGL 기본 설정 (원본 구조 그대로)
+========================================================== */
+const canvas = document.getElementById("glslCanvas");
+const gl = canvas.getContext("webgl", { antialias: true });
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+
+/* Shader Compile */
+function compileShader(gl, type, src) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, src);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error("Shader compile error:", gl.getShaderInfoLog(shader));
+        return null;
+    }
+    return shader;
+}
+
+/* Vertex Shader */
+const vertexShaderSource = `
+attribute vec2 a_position;
+void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+}
+`;
+
+/* ==========================================================
+   3. Fragment Shader — EPx + Shockwave 통합본
+========================================================== */
+const fragmentShaderSource = `
+precision mediump float;
+
+uniform float u_time;
+uniform vec2  u_resolution;
+uniform float u_audio;
+
+/* TouchWave */
+uniform vec2  u_touchPos;
+uniform float u_touchTime;
+
+/* Noise */
+float hash(vec2 p){
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+float noise(vec2 p){
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    vec2 u = f*f*(3.0-2.0*f);
+    return mix(a,b,u.x)
+         + (c-a)*u.y*(1.0-u.x)
+         + (d-b)*u.x*u.y;
+}
+
+/* Shockwave Function */
+float shock(vec2 uv, vec2 center, float t){
+    float d = distance(uv, center);
+
+    float wave = sin((d - t*1.5) * 40.0);
+    float mask = smoothstep(0.03, 0.0, abs(d - t*1.5));
+
+    return wave * mask;
+}
+
+void main(){
+    vec2 uv = gl_FragCoord.xy / u_resolution;
+    vec2 p  = (gl_FragCoord.xy - 0.5*u_resolution.xy)/u_resolution.y;
+
+    float t = u_time * 0.25;
+
+    /* EP1~EP4 원본 효과 */
+    float emerald = noise(p * 3.0 + t * 0.8);
+    float violet  = noise(p * 6.0 + t * 1.3);
+    float gold    = noise(p * 4.0 - t * 0.6);
+    float swirl   = sin(p.x*4.0 + t) * cos(p.y*4.0 - t);
+
+    float pulse = u_audio * 2.0;
+
+    /* Shockwave */
+    float elapsed = u_time - u_touchTime;
+
+    float shockwave = 0.0;
+    if(elapsed > 0.0 && elapsed < 3.0){
+        shockwave = shock(uv, u_touchPos, elapsed);
+    }
+
+    /* Ripple 확산 */
+    float ripple = 0.0;
+    if(elapsed > 0.0 && elapsed < 4.0){
+        ripple = sin((distance(uv, u_touchPos) - elapsed*0.7)*25.0) * 0.15;
+    }
+
+    float tw = shockwave + ripple;
+
+    /* 최종 색상 */
+    vec3 col =
+        vec3(0.1,1.0,0.6)*emerald*0.55 +
+        vec3(0.8,0.4,1.0)*violet *0.45 +
+        vec3(1.0,0.8,0.2)*gold   *(0.5+pulse) +
+        vec3(0.6,0.7,1.0)*swirl  *(0.25+pulse*0.5);
+
+    col += tw * 0.35;
+
+    gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+const vShader = compileShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+const fShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+/* Program Link */
+const program = gl.createProgram();
+gl.attachShader(program, vShader);
+gl.attachShader(program, fShader);
+gl.linkProgram(program);
+gl.useProgram(program);
+
+/* ==========================================================
+   4. Vertex Buffer (원본 그대로)
+========================================================== */
+const posLoc = gl.getAttribLocation(program, "a_position");
+const buffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([
+        -1,-1, 1,-1, -1,1,
+        -1,1,  1,-1, 1,1
+    ]),
+    gl.STATIC_DRAW
+);
+gl.enableVertexAttribArray(posLoc);
+gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+/* Uniforms */
+const u_timeLoc     = gl.getUniformLocation(program, "u_time");
+const u_resLoc      = gl.getUniformLocation(program, "u_resolution");
+const u_audioLoc    = gl.getUniformLocation(program, "u_audio");
+const u_touchPosLoc = gl.getUniformLocation(program, "u_touchPos");
+const u_touchTimeLoc= gl.getUniformLocation(program, "u_touchTime");
+
+/* ==========================================================
+   5. FFT Audio (원본 그대로)
+========================================================== */
+let audioCtx, analyser, dataArray;
+
+uploadBox.addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!audioCtx) audioCtx = new AudioContext();
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+        audioCtx.decodeAudioData(ev.target.result, buf => {
+            const src = audioCtx.createBufferSource();
+            src.buffer = buf;
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 1024;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            src.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            src.start(0);
+            uploadBox.style.display = "none";
+        });
+    };
+    reader.readAsArrayBuffer(file);
+});
+
+function getAudioLevel(){
+    if (!analyser) return 0.0;
+    analyser.getByteFrequencyData(dataArray);
+    let sum = 0;
+    for (let i=0;i<dataArray.length;i++) sum += dataArray[i];
+    return sum / dataArray.length / 255.0;
+}
+
+/* ==========================================================
+   6. Render Loop
+========================================================== */
+function loop(time){
+    gl.viewport(0,0,canvas.width,canvas.height);
+
+    const audioLevel = getAudioLevel();
+
+    gl.uniform1f(u_timeLoc, time*0.001);
+    gl.uniform2f(u_resLoc, canvas.width, canvas.height);
+    gl.uniform1f(u_audioLoc, audioLevel);
+
+    gl.uniform2f(u_touchPosLoc, touchX, touchY);
+    gl.uniform1f(u_touchTimeLoc, touchTime);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
